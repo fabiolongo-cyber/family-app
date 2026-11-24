@@ -1,0 +1,93 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isMember() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/families/famiglia/members/$(request.auth.uid));
+    }
+
+    function isParent() {
+      return isMember()
+        && get(/databases/$(database)/documents/families/famiglia/members/$(request.auth.uid)).data.role == 'parent';
+    }
+
+    // Campi modificabili da chi non e' genitore
+    function onlyChanges(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    match /families/famiglia {
+      allow read: if isMember();
+
+      // I membri e i loro ruoli si gestiscono solo dalla console di Firebase
+      match /members/{uid} {
+        allow read: if isMember();
+      }
+
+      // Calendario: i genitori gestiscono tutto, i figli vedono solo gli eventi a cui sono assegnati
+      match /events/{id} {
+        allow read: if isParent() || (isMember() && request.auth.uid in resource.data.assignedTo);
+        allow create, update, delete: if isParent();
+      }
+
+      // Task: i genitori gestiscono tutto; i figli aggiungono note e completano i propri task
+      match /tasks/{id} {
+        allow read: if isMember();
+        allow create, delete: if isParent();
+        allow update: if isParent()
+          || (isMember() && onlyChanges(['notes', 'updatedAt'])
+              && request.resource.data.get('notes', []).size() >= resource.data.get('notes', []).size())
+          || (isMember() && resource.data.assignedTo == request.auth.uid
+              && onlyChanges(['status', 'completedBy', 'completedAt', 'dueDate',
+                              'lastCompletedAt', 'lastCompletedBy', 'history', 'updatedAt']));
+      }
+
+      // Spesa: tutti i membri possono leggere e modificare
+      match /shopping/{id} {
+        allow read, create, update, delete: if isMember();
+      }
+
+      // Manutenzione: i genitori gestiscono; tutti possono segnalare un problema
+      match /maintenance/{id} {
+        allow read: if isMember();
+        allow create, update, delete: if isParent();
+
+        match /reports/{rid} {
+          allow read: if isMember();
+          allow create: if isMember() && request.resource.data.by == request.auth.uid;
+          allow update, delete: if isParent();
+        }
+      }
+
+      // Obiettivi: i figli vedono e modificano solo quelli visibili a tutti
+      match /objectives/{id} {
+        allow read: if isParent() || (isMember() && resource.data.visibility == 'all');
+        allow create: if isParent() || (isMember() && request.resource.data.visibility == 'all');
+        allow update: if isParent() || (isMember() && resource.data.visibility == 'all'
+                                         && request.resource.data.visibility == 'all');
+        allow delete: if isParent() || (isMember() && resource.data.createdBy == request.auth.uid);
+      }
+
+      // Documenti: tutti leggono, i genitori gestiscono
+      match /documents/{id} {
+        allow read: if isMember();
+        allow create, update, delete: if isParent();
+      }
+
+      // Reminder: i genitori gestiscono tutto; i figli creano e modificano solo i propri
+      match /reminders/{id} {
+        allow read: if isMember();
+        allow create: if isParent()
+          || (isMember() && request.resource.data.createdBy == request.auth.uid
+              && request.resource.data.everyone == false
+              && request.resource.data.targetUsers == [request.auth.uid]);
+        allow update: if isParent()
+          || (isMember() && resource.data.createdBy == request.auth.uid
+              && request.resource.data.everyone == false
+              && request.resource.data.targetUsers == [request.auth.uid]);
+        allow delete: if isParent() || (isMember() && resource.data.createdBy == request.auth.uid);
+      }
+    }
+  }
+}

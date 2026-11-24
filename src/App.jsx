@@ -1,223 +1,133 @@
-import { useEffect, useState } from 'react'
-import {
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signOut,
-  sendPasswordResetEmail,
-} from 'firebase/auth'
+import { useEffect, useMemo, useState } from 'react'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { auth, db, FAMILY_ID } from './firebase.js'
+import { FamilyContext, PALETTE } from './context.jsx'
+import { useFamilyCol } from './lib/data.js'
+import { Icon } from './ui.jsx'
+import Login, { Logo } from './Login.jsx'
+import Home from './screens/Home.jsx'
+import Calendario from './screens/Calendario.jsx'
+import Task from './screens/Task.jsx'
+import Spesa from './screens/Spesa.jsx'
+import Altro from './screens/Altro.jsx'
+import Manutenzione from './screens/Manutenzione.jsx'
+import Obiettivi from './screens/Obiettivi.jsx'
+import Documenti from './screens/Documenti.jsx'
+import Reminder from './screens/Reminder.jsx'
+import Impostazioni from './screens/Impostazioni.jsx'
 
 const INACTIVITY_MS = 15 * 60 * 1000
-const buildTime = new Date(__BUILD_TIME__).toLocaleString('it-IT')
 
-function errorMessage(err) {
-  switch (err && err.code) {
-    case 'auth/invalid-credential':
-    case 'auth/wrong-password':
-    case 'auth/user-not-found':
-    case 'auth/invalid-email':
-      return 'Email o password non corretti.'
-    case 'auth/too-many-requests':
-      return 'Troppi tentativi. Riprova tra qualche minuto.'
-    case 'auth/network-request-failed':
-      return 'Nessuna connessione. Controlla internet e riprova.'
-    default:
-      return 'Qualcosa è andato storto. Riprova.'
-  }
+const TABS = [
+  ['home', 'home', 'Home'],
+  ['calendario', 'calendar', 'Calendario'],
+  ['task', 'task', 'Task'],
+  ['spesa', 'cart', 'Spesa'],
+  ['altro', 'more', 'Altro'],
+]
+
+function Centered({ children }) {
+  return <main className="screen"><Logo />{children}</main>
 }
 
-function Logo() {
+function Shell() {
+  const [nav, setNav] = useState({ tab: 'home', sub: null })
+
+  const go = (tab, sub = null) => {
+    setNav({ tab, sub })
+    window.history.pushState({ tab, sub }, '')
+  }
+
+  // Il tasto "indietro" di Android torna alla schermata precedente
+  useEffect(() => {
+    window.history.replaceState({ tab: 'home', sub: null }, '')
+    const onPop = (e) => setNav(e.state || { tab: 'home', sub: null })
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  const back = () => window.history.back()
+
+  let screen
+  if (nav.tab === 'home') screen = <Home go={go} />
+  else if (nav.tab === 'calendario') screen = <Calendario />
+  else if (nav.tab === 'task') screen = <Task />
+  else if (nav.tab === 'spesa') screen = <Spesa />
+  else if (nav.sub === 'manutenzione') screen = <Manutenzione onBack={back} />
+  else if (nav.sub === 'obiettivi') screen = <Obiettivi onBack={back} />
+  else if (nav.sub === 'documenti') screen = <Documenti onBack={back} />
+  else if (nav.sub === 'reminder') screen = <Reminder onBack={back} />
+  else if (nav.sub === 'impostazioni') screen = <Impostazioni onBack={back} />
+  else screen = <Altro go={go} />
+
   return (
-    <div className="logo" aria-hidden="true">
-      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 11l9-8 9 8" />
-        <path d="M5 10v10h14V10" />
-        <path d="M10 20v-6h4v6" />
-      </svg>
+    <div className="app">
+      <div className="screen-area">{screen}</div>
+      <nav className="tabbar" aria-label="Navigazione principale">
+        {TABS.map(([key, icon, label]) => (
+          <button key={key} type="button" className={'tab' + (nav.tab === key ? ' on' : '')}
+                  aria-current={nav.tab === key ? 'page' : undefined} onClick={() => go(key)}>
+            <span className="tab-icon"><Icon name={icon} /></span>{label}
+          </button>
+        ))}
+      </nav>
     </div>
   )
 }
 
-function Footer() {
-  return <p className="meta">Versione 0.2.0 · compilata il {buildTime}</p>
-}
-
-function Login() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [info, setInfo] = useState('')
-
-  async function handleSubmit(e) {
-    e.preventDefault()
-    setBusy(true)
-    setError('')
-    setInfo('')
-    try {
-      await signInWithEmailAndPassword(auth, email.trim(), password)
-    } catch (err) {
-      setError(errorMessage(err))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleReset() {
-    setError('')
-    setInfo('')
-    if (!email.trim()) {
-      setError('Scrivi la tua email, poi tocca "Password dimenticata?".')
-      return
-    }
-    try {
-      await sendPasswordResetEmail(auth, email.trim())
-      setInfo("Se l'email è registrata, riceverai un link per scegliere una nuova password.")
-    } catch (err) {
-      setError(errorMessage(err))
-    }
-  }
-
-  return (
-    <main className="screen">
-      <Logo />
-      <h1>FamilyApp</h1>
-      <p className="lead">Calendario, task, spesa e documenti: tutta la famiglia allineata.</p>
-
-      <form className="form" onSubmit={handleSubmit}>
-        <div className="field">
-          <label htmlFor="email">Email</label>
-          <input id="email" type="email" autoComplete="username" inputMode="email"
-                 value={email} onChange={(e) => setEmail(e.target.value)} required />
-        </div>
-        <div className="field">
-          <label htmlFor="password">Password</label>
-          <input id="password" type="password" autoComplete="current-password"
-                 value={password} onChange={(e) => setPassword(e.target.value)} required />
-        </div>
-
-        {error && <p className="error" role="alert">{error}</p>}
-        {info && <p className="info" role="status">{info}</p>}
-
-        <button className="btn btn-primary" type="submit" disabled={busy}>
-          {busy ? 'Accesso in corso…' : 'Accedi'}
-        </button>
-        <button className="btn btn-quiet" type="button" onClick={handleReset}>
-          Password dimenticata?
-        </button>
-      </form>
-      <Footer />
-    </main>
-  )
-}
-
-const ROLES = { parent: 'Genitore', child: 'Figlio' }
-
-function Home({ user }) {
-  const [state, setState] = useState({ status: 'loading' })
+function FamilyApp({ user }) {
+  const [family, setFamily] = useState(undefined)
+  const [famError, setFamError] = useState(null)
+  const { docs: memberDocs, loading, error } = useFamilyCol('members')
 
   useEffect(() => {
     let cancelled = false
-    async function load() {
-      try {
-        const [fam, mem] = await Promise.all([
-          getDoc(doc(db, 'families', FAMILY_ID)),
-          getDoc(doc(db, 'families', FAMILY_ID, 'members', user.uid)),
-        ])
-        if (cancelled) return
-        if (!fam.exists() || !mem.exists()) {
-          setState({ status: 'missing' })
-        } else {
-          setState({ status: 'ok', family: fam.data(), member: mem.data() })
-        }
-      } catch (err) {
-        if (!cancelled) setState({ status: 'error', code: err.code || 'unknown' })
-      }
-    }
-    load()
+    getDoc(doc(db, 'families', FAMILY_ID))
+      .then((d) => { if (!cancelled) setFamily(d.exists() ? d.data() : null) })
+      .catch((e) => { if (!cancelled) setFamError(e) })
     return () => { cancelled = true }
-  }, [user.uid])
+  }, [])
 
-  return (
-    <main className="screen">
-      <Logo />
-      {state.status === 'loading' && <p className="lead">Caricamento…</p>}
+  const members = useMemo(() => {
+    const sorted = [...memberDocs].sort((a, b) => (a.id < b.id ? -1 : 1))
+    return sorted.map((m, i) => ({ uid: m.id, displayName: m.displayName || 'Senza nome', role: m.role || 'child', color: m.color || PALETTE[i % PALETTE.length] }))
+  }, [memberDocs])
+  const me = members.find((m) => m.uid === user.uid)
 
-      {state.status === 'ok' && (
-        <>
-          <h1>Ciao, {state.member.displayName}</h1>
-          <p className="lead">{ROLES[state.member.role] || state.member.role}</p>
-          <div className="card ok" role="status">
-            <strong>Database collegato</strong>
-            <span>Famiglia: {state.family.name}</span>
-          </div>
-        </>
-      )}
+  const ctx = useMemo(() => ({ user, me, members, family, isParent: !!me && me.role === 'parent' }), [user, me, members, family])
 
-      {state.status === 'missing' && (
-        <>
-          <h1>Quasi pronto</h1>
-          <div className="card warn" role="alert">
-            <strong>Account non collegato alla famiglia</strong>
-            <span>Mancano i dati della famiglia nel database. Controlla il passaggio 3 delle istruzioni.</span>
-          </div>
-        </>
-      )}
-
-      {state.status === 'error' && (
-        <>
-          <h1>Database non raggiungibile</h1>
-          <div className="card warn" role="alert">
-            <strong>Errore: {state.code}</strong>
-            <span>
-              {state.code === 'permission-denied'
-                ? "Accesso negato: le regole di sicurezza non sono state pubblicate oppure il tuo account non è tra i membri della famiglia."
-                : 'Controlla la connessione e riprova.'}
-            </span>
-          </div>
-        </>
-      )}
-
-      <button className="btn btn-quiet" type="button" onClick={() => signOut(auth)}>
-        Esci
-      </button>
-      <p className="meta">{user.email}</p>
-      <Footer />
-    </main>
-  )
-}
-
-export default function App() {
-  const [user, setUser] = useState(undefined) // undefined = sto controllando, null = non loggato
-
-  useEffect(() => onAuthStateChanged(auth, (u) => setUser(u)), [])
-
-  // Uscita automatica dopo 15 minuti di inattivita'
   useEffect(() => {
-    if (!user) return undefined
     let timer
-    const reset = () => {
-      clearTimeout(timer)
-      timer = setTimeout(() => signOut(auth), INACTIVITY_MS)
-    }
+    const reset = () => { clearTimeout(timer); timer = setTimeout(() => signOut(auth), INACTIVITY_MS) }
     const events = ['click', 'touchstart', 'keydown']
     events.forEach((ev) => window.addEventListener(ev, reset, { passive: true }))
     reset()
-    return () => {
-      clearTimeout(timer)
-      events.forEach((ev) => window.removeEventListener(ev, reset))
-    }
-  }, [user])
+    return () => { clearTimeout(timer); events.forEach((ev) => window.removeEventListener(ev, reset)) }
+  }, [])
 
-  if (user === undefined) {
+  if (loading) return <Centered><p className="lead">Caricamento…</p></Centered>
+
+  if (error || famError || !me) {
+    const code = (error && error.code) || (famError && famError.code)
     return (
-      <main className="screen">
-        <Logo />
-        <p className="lead">Caricamento…</p>
-      </main>
+      <Centered>
+        <h1>Quasi pronto</h1>
+        <div className="card warn" role="alert">
+          <strong>{code === 'permission-denied' || !me ? 'Account non collegato alla famiglia' : `Errore: ${code}`}</strong>
+          <span>Il tuo account ({user.email}) non risulta tra i membri della famiglia, oppure le regole di sicurezza non sono state pubblicate. Chiedi a un genitore di collegarlo da Firebase.</span>
+        </div>
+        <button className="btn btn-quiet" type="button" onClick={() => signOut(auth)}>Esci</button>
+      </Centered>
     )
   }
-  return user ? <Home user={user} /> : <Login />
+
+  return <FamilyContext.Provider value={ctx}><Shell /></FamilyContext.Provider>
+}
+
+export default function App() {
+  const [user, setUser] = useState(undefined)
+  useEffect(() => onAuthStateChanged(auth, (u) => setUser(u)), [])
+  if (user === undefined) return <Centered><p className="lead">Caricamento…</p></Centered>
+  return user ? <FamilyApp user={user} /> : <Login />
 }
