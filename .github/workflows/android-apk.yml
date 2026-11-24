@@ -27,13 +27,30 @@ jobs:
           java-version: 21
 
       - name: Installa le dipendenze
-        run: npm install
+        run: npm install --no-audit --no-fund --legacy-peer-deps
 
       - name: Compila l'app web
         run: npm run build
 
       - name: Crea il progetto Android
         run: npx cap add android
+
+      - name: Aggiungi i permessi Android (biometria e microfono)
+        run: |
+          f=android/app/src/main/AndroidManifest.xml
+          for p in USE_BIOMETRIC RECORD_AUDIO; do
+            grep -q "android.permission.$p" "$f" || sed -i "s#<application#<uses-permission android:name=\"android.permission.$p\" />\n    <application#" "$f"
+          done
+          grep -n "uses-permission" "$f"
+
+      - name: Genera le icone (se esiste la cartella assets)
+        continue-on-error: true
+        run: |
+          if [ -f assets/icon.png ] || [ -f assets/icon-only.png ]; then
+            npx @capacitor/assets generate --android --iconBackgroundColor '#FFFFFF' --splashBackgroundColor '#FFFFFF'
+          else
+            echo "Nessuna icona personalizzata in assets/: uso quella predefinita."
+          fi
 
       - name: Sincronizza l'app web nel progetto Android
         run: npx cap sync android
