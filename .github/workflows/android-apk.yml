@@ -1,0 +1,56 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scarica il codice
+        uses: actions/checkout@v4
+
+      - name: Installa Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Installa Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Installa le dipendenze
+        run: npm install
+
+      - name: Compila l'app web
+        run: npm run build
+
+      - name: Crea il progetto Android
+        run: npx cap add android
+
+      - name: Sincronizza l'app web nel progetto Android
+        run: npx cap sync android
+
+      - name: Compila l'APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Rinomina l'APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk FamilyApp-debug.apk
+
+      - name: Pubblica l'APK nelle Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-${{ github.run_number }}" FamilyApp-debug.apk \
+            --title "FamilyApp build ${{ github.run_number }}" \
+            --notes "APK di test (debug). Compilato dal commit ${{ github.sha }}."
