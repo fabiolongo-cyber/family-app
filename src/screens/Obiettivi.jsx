@@ -3,49 +3,48 @@ import { addDoc, arrayUnion, deleteDoc, serverTimestamp, Timestamp, updateDoc } 
 import { useFamily } from '../context.jsx'
 import { famCol, famDoc, useVisibleObjectives } from '../lib/data.js'
 import { daysFromToday, dueTone, fmtDateShort, inputDate, parseInputDate, relativeDue, toDate, time } from '../lib/dates.js'
-import { Badge, ErrorNote, Fab, Field, FormActions, Icon, ScreenHeader, Sheet } from '../ui.jsx'
+import { Badge, Empty, ErrorNote, Fab, Field, FormActions, Icon, ScreenHeader, Sheet } from '../ui.jsx'
 
 const STEPS = [0, 10, 25, 50, 75, 100]
-const COLUMNS = [
-  ['todo', 'Da iniziare', (p) => p === 0],
-  ['doing', 'In corso', (p) => p > 0 && p < 100],
-  ['done', 'Completati', (p) => p === 100],
-]
 
 export default function Obiettivi({ onBack }) {
   const { objectives, error } = useVisibleObjectives()
   const [open, setOpen] = useState(null)
-  const sorted = [...objectives].sort((a, b) => time(a.targetDate) - time(b.targetDate))
+
+  // In ordine di scadenza; gli obiettivi completati vanno in fondo
+  const byDate = (a, b) => (a.targetDate ? time(a.targetDate) : Infinity) - (b.targetDate ? time(b.targetDate) : Infinity)
+  const active = objectives.filter((o) => (o.progress || 0) < 100).sort(byDate)
+  const done = objectives.filter((o) => (o.progress || 0) >= 100).sort(byDate)
+
+  const card = (o) => {
+    const target = toDate(o.targetDate)
+    return (
+      <button key={o.id} type="button" className={'card goal' + ((o.progress || 0) >= 100 ? ' done' : '')} onClick={() => setOpen(o.id)}>
+        <span className="card-title">{o.title}{o.visibility === 'parents_only' && <Badge>Solo genitori</Badge>}</span>
+        <span className="muted small">{target ? `Entro ${fmtDateShort(target)}` : 'Senza scadenza'}{o.budget ? ` · Budget € ${o.budget}` : ''}</span>
+        <span className="bar" aria-hidden="true"><span style={{ width: `${o.progress || 0}%` }} /></span>
+        <span className="small strong goal-foot">
+          <span>{o.progress || 0}%</span>
+          {target && (o.progress || 0) < 100 && daysFromToday(target) <= 30 && <Badge tone={dueTone(target)}>{relativeDue(target)}</Badge>}
+          {(o.notes || []).length > 0 && <span className="muted"><Icon name="note" size={14} /> {o.notes.length}</span>}
+        </span>
+      </button>
+    )
+  }
 
   return (
     <>
       <ScreenHeader title="Obiettivi" onBack={onBack} />
       <div className="content">
         <ErrorNote error={error} />
-        <p className="muted small">Scorri di lato per cambiare colonna. Tocca una scheda per note e dettagli.</p>
-        <div className="board">
-          {COLUMNS.map(([key, label, test]) => {
-            const col = sorted.filter((o) => test(o.progress || 0))
-            return (
-              <section key={key} className="board-col" aria-label={label}>
-                <div className="section-head"><h2>{label}</h2><span className="count">{col.length}</span></div>
-                {col.length === 0 && <p className="muted small">Nessun obiettivo</p>}
-                {col.map((o) => {
-                  const target = toDate(o.targetDate)
-                  return (
-                    <button key={o.id} type="button" className="card goal" onClick={() => setOpen(o.id)}>
-                      <span className="card-title">{o.title}{o.visibility === 'parents_only' && <Badge>Solo genitori</Badge>}</span>
-                      <span className="muted small">{target ? `Entro ${fmtDateShort(target)}` : ''}{o.budget ? ` · Budget € ${o.budget}` : ''}</span>
-                      <span className="bar" aria-hidden="true"><span style={{ width: `${o.progress || 0}%` }} /></span>
-                      <span className="small strong">{o.progress || 0}%{target && daysFromToday(target) <= 30 && <span className="muted"> · <Badge tone={dueTone(target)}>{relativeDue(target)}</Badge></span>}</span>
-                      {(o.notes || []).length > 0 && <span className="muted small"><Icon name="note" size={14} /> {o.notes.length} note</span>}
-                    </button>
-                  )
-                })}
-              </section>
-            )
-          })}
-        </div>
+        {objectives.length === 0 && <Empty>Nessun obiettivo. Creane uno con il pulsante +.</Empty>}
+        {active.map(card)}
+        {done.length > 0 && (
+          <>
+            <div className="section-head"><h2 className="muted">Completati · {done.length}</h2></div>
+            {done.map(card)}
+          </>
+        )}
       </div>
       <Fab label="Nuovo obiettivo" onClick={() => setOpen('new')} />
       {open && <GoalSheet goal={objectives.find((o) => o.id === open)} onClose={() => setOpen(null)} />}

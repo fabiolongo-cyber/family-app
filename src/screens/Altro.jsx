@@ -2,7 +2,7 @@ import { useFamily } from '../context.jsx'
 import { Avatar, Icon, ScreenHeader } from '../ui.jsx'
 
 const ROWS = [
-  ['manutenzione', 'wrench', 'Manutenzione'],
+  ['scadenze', 'wrench', 'Scadenze'],
   ['obiettivi', 'target', 'Obiettivi'],
   ['documenti', 'file', 'Documenti'],
   ['reminder', 'bell', 'Reminder'],

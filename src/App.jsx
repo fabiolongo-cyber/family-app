@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { auth, db, FAMILY_ID } from './firebase.js'
@@ -11,11 +11,13 @@ import Calendario from './screens/Calendario.jsx'
 import Task from './screens/Task.jsx'
 import Spesa from './screens/Spesa.jsx'
 import Altro from './screens/Altro.jsx'
-import Manutenzione from './screens/Manutenzione.jsx'
+import Scadenze from './screens/Scadenze.jsx'
 import Obiettivi from './screens/Obiettivi.jsx'
 import Documenti from './screens/Documenti.jsx'
 import Reminder from './screens/Reminder.jsx'
 import Impostazioni from './screens/Impostazioni.jsx'
+import Lock from './Lock.jsx'
+import { bioLockEnabled, setBioLock } from './lib/native.js'
 
 const INACTIVITY_MS = 15 * 60 * 1000
 
@@ -54,7 +56,7 @@ function Shell() {
   else if (nav.tab === 'calendario') screen = <Calendario />
   else if (nav.tab === 'task') screen = <Task />
   else if (nav.tab === 'spesa') screen = <Spesa />
-  else if (nav.sub === 'manutenzione') screen = <Manutenzione onBack={back} />
+  else if (nav.sub === 'scadenze') screen = <Scadenze onBack={back} />
   else if (nav.sub === 'obiettivi') screen = <Obiettivi onBack={back} />
   else if (nav.sub === 'documenti') screen = <Documenti onBack={back} />
   else if (nav.sub === 'reminder') screen = <Reminder onBack={back} />
@@ -80,6 +82,10 @@ function FamilyApp({ user }) {
   const [family, setFamily] = useState(undefined)
   const [famError, setFamError] = useState(null)
   const { docs: memberDocs, loading, error } = useFamilyCol('members')
+  const [bio, setBioState] = useState(bioLockEnabled())
+  const [locked, setLocked] = useState(bioLockEnabled())
+  const lastActive = useRef(Date.now())
+  const setBio = (on) => { setBioLock(on); setBioState(on) }
 
   useEffect(() => {
     let cancelled = false
@@ -95,15 +101,30 @@ function FamilyApp({ user }) {
   }, [memberDocs])
   const me = members.find((m) => m.uid === user.uid)
 
-  const ctx = useMemo(() => ({ user, me, members, family, isParent: !!me && me.role === 'parent' }), [user, me, members, family])
+  const ctx = useMemo(() => ({ user, me, members, family, bio, setBio, isParent: !!me && me.role === 'parent' }), [user, me, members, family, bio]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Dopo 15 minuti di inattivita': blocco con biometria se attivo, altrimenti uscita
   useEffect(() => {
     let timer
-    const reset = () => { clearTimeout(timer); timer = setTimeout(() => signOut(auth), INACTIVITY_MS) }
+    const expire = () => { if (bioLockEnabled()) setLocked(true); else signOut(auth) }
+    const reset = () => { lastActive.current = Date.now(); clearTimeout(timer); timer = setTimeout(expire, INACTIVITY_MS) }
     const events = ['click', 'touchstart', 'keydown']
     events.forEach((ev) => window.addEventListener(ev, reset, { passive: true }))
     reset()
-    return () => { clearTimeout(timer); events.forEach((ev) => window.removeEventListener(ev, reset)) }
+    // Al ritorno nell'app controlla quanto tempo e' passato
+    let hiddenAt = 0
+    const onVisibility = () => {
+      if (document.hidden) { hiddenAt = Date.now(); return }
+      const away = hiddenAt ? Date.now() - hiddenAt : 0
+      if (Date.now() - lastActive.current > INACTIVITY_MS) expire()
+      else if (away > 60 * 1000 && bioLockEnabled()) setLocked(true)
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      clearTimeout(timer)
+      events.forEach((ev) => window.removeEventListener(ev, reset))
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [])
 
   if (loading) return <Centered><p className="lead">Caricamento…</p></Centered>
@@ -120,6 +141,10 @@ function FamilyApp({ user }) {
         <button className="btn btn-quiet" type="button" onClick={() => signOut(auth)}>Esci</button>
       </Centered>
     )
+  }
+
+  if (locked && bio) {
+    return <Lock onUnlock={() => { lastActive.current = Date.now(); setLocked(false) }} onPassword={() => { setBio(false); signOut(auth) }} />
   }
 
   return <FamilyContext.Provider value={ctx}><Shell /></FamilyContext.Provider>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { addDoc, deleteDoc, serverTimestamp, Timestamp, updateDoc } from 'firebase/firestore'
 import { useFamily } from '../context.jsx'
 import { famCol, famDoc, lines, useMyEvents } from '../lib/data.js'
@@ -13,10 +13,114 @@ const REC = [
   ['monthly', 'Ogni mese'], ['yearly', 'Ogni anno'],
 ]
 
+const HOUR_H = 44
+const START_H = 6
+const END_H = 23
+
+// Dispone gli eventi sovrapposti uno accanto all'altro
+function layoutDay(evs) {
+  const out = []
+  let cluster = []
+  let clusterEnd = -1
+  const flush = () => {
+    const cols = []
+    cluster.forEach((e) => {
+      let c = cols.findIndex((end) => end <= e.startMin)
+      if (c === -1) { c = cols.length; cols.push(e.endMin) } else cols[c] = e.endMin
+      e.col = c
+    })
+    cluster.forEach((e) => { e.cols = cols.length; out.push(e) })
+    cluster = []
+  }
+  evs.forEach((e) => {
+    if (cluster.length && e.startMin >= clusterEnd) { flush(); clusterEnd = -1 }
+    cluster.push(e)
+    clusterEnd = Math.max(clusterEnd, e.endMin)
+  })
+  if (cluster.length) flush()
+  return out
+}
+
+function WeekGrid({ days, eventsOn, colorsOf, onOpen }) {
+  const scroller = useRef(null)
+  useEffect(() => { if (scroller.current) scroller.current.scrollTop = (7 - START_H) * HOUR_H - 10 }, [])
+  const todayKey = dayKey(new Date())
+  const hours = Array.from({ length: END_H - START_H }, (_, i) => START_H + i)
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes()
+
+  const perDay = days.map((day) => {
+    const all = eventsOn(day)
+    const allDay = all.filter((e) => e.allDay)
+    const timed = all.filter((e) => !e.allDay).map((e) => {
+      const s = toDate(e.start)
+      const en = toDate(e.end)
+      const startMin = Math.min(Math.max(s.getHours() * 60 + s.getMinutes(), START_H * 60), END_H * 60 - 20)
+      const rawEnd = en ? en.getHours() * 60 + en.getMinutes() : startMin + 60
+      const endMin = Math.min(Math.max(rawEnd, startMin + 20), END_H * 60)
+      return { ev: e, startMin, endMin }
+    }).sort((a, b) => a.startMin - b.startMin)
+    return { day, allDay, timed: layoutDay(timed) }
+  })
+
+  return (
+    <div className="card weekgrid">
+      <div className="wg-row wg-head">
+        <div />
+        {perDay.map(({ day }) => (
+          <div key={dayKey(day)} className="wg-dayhead">
+            <span className="tiny muted">{DAYS_SHORT[(day.getDay() + 6) % 7]}</span>
+            <span className={'day-num' + (dayKey(day) === todayKey ? ' today' : '')}>{day.getDate()}</span>
+          </div>
+        ))}
+      </div>
+      {perDay.some((d) => d.allDay.length > 0) && (
+        <div className="wg-row wg-allday">
+          <div className="tiny muted wg-label">Giorno</div>
+          {perDay.map(({ day, allDay }) => (
+            <div key={dayKey(day)} className="wg-allcell">
+              {allDay.map((e) => (
+                <button key={e.id} type="button" className="wg-chip" style={{ background: colorsOf(e)[0] || '#0F766E' }}
+                        onClick={() => onOpen(e.id)} title={e.title}>{e.title}</button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="wg-body" ref={scroller}>
+        <div className="wg-row wg-grid" style={{ height: hours.length * HOUR_H }}>
+          <div className="wg-hours">
+            {hours.map((h) => <div key={h} className="wg-hour tiny muted" style={{ height: HOUR_H }}>{String(h).padStart(2, '0')}:00</div>)}
+          </div>
+          {perDay.map(({ day, timed }) => (
+            <div key={dayKey(day)} className={'wg-col' + (dayKey(day) === todayKey ? ' today' : '')}>
+              {dayKey(day) === todayKey && nowMin >= START_H * 60 && nowMin <= END_H * 60 && (
+                <div className="wg-now" style={{ top: ((nowMin - START_H * 60) / 60) * HOUR_H }} />
+              )}
+              {timed.map(({ ev, startMin, endMin, col, cols }) => (
+                <button key={ev.id} type="button" className="wg-event" onClick={() => onOpen(ev.id)}
+                        aria-label={`${ev.title}, ${fmtTime(toDate(ev.start))}`}
+                        style={{
+                          top: ((startMin - START_H * 60) / 60) * HOUR_H,
+                          height: Math.max(20, ((endMin - startMin) / 60) * HOUR_H - 2),
+                          left: `${(col / cols) * 100}%`, width: `calc(${100 / cols}% - 2px)`,
+                          background: colorsOf(ev)[0] || '#0F766E',
+                        }}>
+                  <span className="wg-title">{ev.title}</span>
+                  <span className="wg-time">{fmtTime(toDate(ev.start))}</span>
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Calendario() {
   const { members, isParent } = useFamily()
   const { events, error } = useMyEvents()
-  const [view, setView] = useState('mese')
+  const [view, setView] = useState('settimana')
   const [cursor, setCursor] = useState(startOfDay(new Date()))
   const [selected, setSelected] = useState(startOfDay(new Date()))
   const [editing, setEditing] = useState(null) // null | 'new' | id evento
@@ -63,6 +167,7 @@ export default function Calendario() {
     <>
       <ScreenHeader title={title.charAt(0).toUpperCase() + title.slice(1)} subtitle="Calendario"
         right={<div className="header-actions">
+          <button type="button" className="icon-btn" onClick={() => setCursor(startOfDay(new Date()))} aria-label="Oggi"><Icon name="calendar" size={22} /></button>
           <button type="button" className="icon-btn" onClick={() => step(-1)} aria-label="Precedente"><Icon name="back" size={24} /></button>
           <button type="button" className="icon-btn" onClick={() => step(1)} aria-label="Successivo"><Icon name="next" size={24} /></button>
         </div>} />
@@ -99,15 +204,9 @@ export default function Calendario() {
           </>
         )}
 
-        {view === 'settimana' && weekDays.map((day) => (
-          <div key={dayKey(day)}>
-            <div className="section-head">
-              <h2 className={dayKey(day) === today ? 'accent' : ''}>{fmtDateLong(day)}</h2>
-            </div>
-            {eventsOn(day).length === 0 && <p className="muted small">Nessun evento</p>}
-            {eventsOn(day).map(renderEvent)}
-          </div>
-        ))}
+        {view === 'settimana' && (
+          <WeekGrid days={weekDays} eventsOn={eventsOn} colorsOf={colorsOf} onOpen={setEditing} />
+        )}
       </div>
       {isParent && <Fab label="Nuovo evento" onClick={() => setEditing('new')} />}
       {editing && <EventSheet event={events.find((e) => e.id === editing)} day={selected} onClose={() => setEditing(null)} />}

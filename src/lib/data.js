@@ -45,3 +45,34 @@ export function useVisibleObjectives() {
 }
 
 export const lines = (text) => text.split('\n').map((s) => s.trim()).filter(Boolean)
+
+// Nome sicuro per usare un testo come ID di documento ("Latte intero" -> "latte-intero")
+export const slug = (t) => (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'voce'
+
+// Ascolta un singolo documento in tempo reale (data = undefined mentre carica, null se non esiste)
+export function useFamilyDoc(pathArr) {
+  const [state, setState] = useState({ data: undefined, error: null })
+  const path = pathArr.join('/')
+  useEffect(() => onSnapshot(
+    doc(db, ...path.split('/')),
+    (snap) => setState({ data: snap.exists() ? snap.data() : null, error: null }),
+    (error) => setState({ data: null, error }),
+  ), [path])
+  return state
+}
+
+export const DEFAULT_DOC_TYPES = [
+  { id: 'cie', name: 'CIE' },
+  { id: 'tessera-sanitaria', name: 'Tessera Sanitaria' },
+  { id: 'fasi', name: 'FASI' },
+  { id: 'blue-assistance', name: 'Blue Assistance' },
+]
+
+// Le "voci" dei documenti sono configurabili da Impostazioni
+// Restituisce null finche' le voci si stanno caricando
+export function useDocTypes() {
+  const { data } = useFamilyDoc(['families', FAMILY_ID, 'settings', 'documentTypes'])
+  if (data === undefined) return null
+  return data && Array.isArray(data.items) ? data.items : DEFAULT_DOC_TYPES
+}

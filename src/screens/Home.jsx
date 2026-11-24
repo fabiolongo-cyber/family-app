@@ -78,8 +78,8 @@ export default function Home({ go }) {
               <span className="muted small">{describeTrigger(mine.next)} · {recipientsLabel(mine.r, members)}</span>
             </>) : <span className="muted small">Nessun reminder attivo.</span>}
           </button>
-          <button type="button" className="card tile" onClick={() => go('altro', 'manutenzione')}>
-            <span className="tile-head"><Icon name="wrench" size={16} /> Manutenzione</span>
+          <button type="button" className="card tile" onClick={() => go('altro', 'scadenze')}>
+            <span className="tile-head"><Icon name="wrench" size={16} /> Scadenze</span>
             {maint ? (<>
               <Badge tone={dueTone(toDate(maint.nextDate))}>{relativeDue(toDate(maint.nextDate))}</Badge>
               <span className="strong">{maint.title}</span>

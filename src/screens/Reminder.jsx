@@ -3,7 +3,7 @@ import { addDoc, deleteDoc, serverTimestamp, Timestamp, updateDoc } from 'fireba
 import { useFamily } from '../context.jsx'
 import { famCol, famDoc, useFamilyCol } from '../lib/data.js'
 import { DAYS_LONG, describeFrequency, describeTrigger, inputDate, nextTrigger, parseInputDate, toDate } from '../lib/dates.js'
-import { Empty, ErrorNote, Fab, Field, FormActions, ScreenHeader, Sheet } from '../ui.jsx'
+import { Empty, ErrorNote, Fab, Field, FormActions, ScreenHeader, Sheet, SwipeRow, useSnack } from '../ui.jsx'
 
 const FREQ = [['daily', 'Ogni giorno'], ['weekly', 'Giorni della settimana'], ['monthly', 'Ogni mese'], ['once', 'Una volta']]
 
@@ -15,10 +15,21 @@ export default function Reminder({ onBack }) {
   const { docs, error } = useFamilyCol('reminders')
   const [edit, setEdit] = useState(null)
   const [err, setErr] = useState('')
+  const [snack, showSnack] = useSnack()
 
   const rows = docs.map((r) => ({ r, next: r.isActive === false ? null : nextTrigger(r) }))
     .sort((a, b) => (a.next ? a.next.getTime() : Infinity) - (b.next ? b.next.getTime() : Infinity))
   const canEdit = (r) => isParent || r.createdBy === me.uid
+
+  async function removeReminder(r) {
+    const { id, ...data } = r
+    try {
+      await deleteDoc(famDoc('reminders', id))
+      showSnack(`"${r.title}" eliminato`, 'Annulla', async () => {
+        try { await addDoc(famCol('reminders'), { ...data, updatedAt: serverTimestamp() }) } catch { setErr('Non sono riuscito a ripristinare il reminder.') }
+      })
+    } catch { setErr('Eliminazione non riuscita.') }
+  }
 
   async function toggle(r) {
     setErr('')
@@ -34,8 +45,10 @@ export default function Reminder({ onBack }) {
         <ErrorNote error={error} />
         {err && <p className="error" role="alert">{err}</p>}
         {rows.length === 0 && <Empty>Nessun reminder. Creane uno con il pulsante +.</Empty>}
+        <p className="hint">Scorri un reminder di lato per eliminarlo, oppure aprilo e tocca Elimina.</p>
         {rows.map(({ r, next }) => (
-          <div key={r.id} className={'card reminder' + (r.isActive === false ? ' off' : '')}>
+          <SwipeRow key={r.id} disabled={!canEdit(r)} onDelete={() => removeReminder(r)}>
+          <div className={'card reminder' + (r.isActive === false ? ' off' : '')}>
             <button type="button" className="reminder-main" onClick={() => canEdit(r) && setEdit(r.id)} disabled={!canEdit(r)}>
               <span className="reminder-time">{r.time}</span>
               <span className="reminder-body">
@@ -48,8 +61,10 @@ export default function Reminder({ onBack }) {
                     aria-label={`Attiva il reminder ${r.title}`} className={'switch' + (r.isActive !== false ? ' on' : '')}
                     onClick={() => toggle(r)}><span /></button>
           </div>
+          </SwipeRow>
         ))}
       </div>
+      {snack}
       <Fab label="Nuovo reminder" onClick={() => setEdit('new')} />
       {edit && <ReminderSheet item={docs.find((r) => r.id === edit)} onClose={() => setEdit(null)} />}
     </>

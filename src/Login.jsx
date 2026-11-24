@@ -76,7 +76,7 @@ export default function Login() {
         <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? 'Accesso in corso…' : 'Accedi'}</button>
         <button className="btn btn-quiet" type="button" onClick={handleReset}>Password dimenticata?</button>
       </form>
-      <p className="meta">Versione 0.3.0 · compilata il {buildTime}</p>
+      <p className="meta">Versione 0.4.0 · compilata il {buildTime}</p>
     </main>
   )
 }

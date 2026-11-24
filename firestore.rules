@@ -48,7 +48,21 @@ service cloud.firestore {
         allow read, create, update, delete: if isMember();
       }
 
-      // Manutenzione: i genitori gestiscono; tutti possono segnalare un problema
+      // Spesa: cronologia dei prodotti e liste precedenti (suggerimenti)
+      match /shoppingHistory/{id} {
+        allow read, create, update, delete: if isMember();
+      }
+      match /shoppingLists/{id} {
+        allow read, create, update, delete: if isMember();
+      }
+
+      // Impostazioni della famiglia (per esempio le voci dei documenti): leggono tutti, modificano i genitori
+      match /settings/{id} {
+        allow read: if isMember();
+        allow write: if isParent();
+      }
+
+      // Scadenze (ex Manutenzione): i genitori gestiscono; tutti possono segnalare un problema
       match /maintenance/{id} {
         allow read: if isMember();
         allow create, update, delete: if isParent();

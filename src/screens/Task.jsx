@@ -163,7 +163,7 @@ function TaskSheet({ task, onClose }) {
       {isParent ? (
         <form className="form" onSubmit={save}>
           <Field label="Titolo" htmlFor="t-title"><input id="t-title" value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
-          <Field label="Assegnato a"><PersonPicker single members={members} value={assignedTo} onChange={setAssignedTo} /></Field>
+          <Field label="Owner"><PersonPicker single members={members} value={assignedTo} onChange={setAssignedTo} /></Field>
           <Field label="Scadenza" htmlFor="t-due"><input id="t-due" type="date" value={due} onChange={(e) => setDue(e.target.value)} required /></Field>
           <div className="two">
             <Field label="Categoria" htmlFor="t-cat">
@@ -186,7 +186,7 @@ function TaskSheet({ task, onClose }) {
           <FormActions busy={busy} onDelete={isNew ? null : remove} />
         </form>
       ) : (
-        <p className="muted">Assegnato a {(members.find((m) => m.uid === task.assignedTo) || {}).displayName} · {relativeDue(toDate(task.dueDate))}</p>
+        <p className="muted">Owner: {(members.find((m) => m.uid === task.assignedTo) || {}).displayName} · {relativeDue(toDate(task.dueDate))}</p>
       )}
 
       {!isNew && (

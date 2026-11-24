@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const ICONS = {
   home: <><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /><path d="M10 20v-6h4v6" /></>,
@@ -20,6 +20,10 @@ const ICONS = {
   repeat: <><path d="M4 12a8 8 0 0 1 14-5l2 2M20 12a8 8 0 0 1-14 5l-2-2" /><path d="M20 4v5h-5M4 20v-5h5" /></>,
   note: <path d="M4 5h16v11H9l-5 4z" />,
   check: <path d="M5 12l5 5 9-10" />,
+  trash: <><path d="M4 7h16M10 11v6M14 11v6" /><path d="M6 7l1 13h10l1-13M9 7V4h6v3" /></>,
+  mic: <><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></>,
+  lock: <><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></>,
+  fingerprint: <><path d="M12 11v4c0 2-1 3-2 4" /><path d="M8 11a4 4 0 0 1 8 0v2" /><path d="M5 11a7 7 0 0 1 14 0v1" /><path d="M16 14c0 3 0 4-1 6" /></>,
 }
 
 export function Icon({ name, size = 22 }) {
@@ -184,4 +188,84 @@ export function FormActions({ onDelete, busy, saveLabel = 'Salva' }) {
       <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? 'Salvataggio…' : saveLabel}</button>
     </div>
   )
+}
+
+// Riga che si elimina scorrendo a destra o a sinistra; supporta anche la pressione lunga.
+export function SwipeRow({ onDelete, onLongPress, disabled = false, children }) {
+  const [dx, setDx] = useState(0)
+  const [anim, setAnim] = useState(false)
+  const st = useRef({ x: 0, y: 0, active: false, moved: false, long: false, timer: null, blockClick: false })
+  const THRESHOLD = 96
+
+  if (disabled && !onLongPress) return <div>{children}</div>
+
+  const down = (e) => {
+    const s = st.current
+    s.x = e.clientX; s.y = e.clientY; s.active = true; s.moved = false; s.long = false; s.blockClick = false
+    clearTimeout(s.timer)
+    if (onLongPress) {
+      s.timer = setTimeout(() => {
+        if (s.active && !s.moved) { s.long = true; s.blockClick = true; onLongPress() }
+      }, 600)
+    }
+  }
+  const move = (e) => {
+    const s = st.current
+    if (!s.active || disabled) return
+    const ddx = e.clientX - s.x
+    const ddy = e.clientY - s.y
+    if (!s.moved) {
+      if (Math.abs(ddx) > 10 && Math.abs(ddx) > Math.abs(ddy) * 1.5) {
+        s.moved = true
+        clearTimeout(s.timer)
+        try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* ignora */ }
+      } else if (Math.abs(ddy) > 10) { s.active = false; clearTimeout(s.timer); return }
+    }
+    if (s.moved) { setAnim(false); setDx(ddx) }
+  }
+  const up = () => {
+    const s = st.current
+    clearTimeout(s.timer)
+    if (!s.active) return
+    s.active = false
+    if (s.moved) {
+      s.blockClick = true
+      if (Math.abs(dx) > THRESHOLD) {
+        setAnim(true)
+        setDx(dx > 0 ? 480 : -480)
+        setTimeout(() => { setDx(0); onDelete() }, 160)
+      } else { setAnim(true); setDx(0) }
+    }
+  }
+  const clickCapture = (e) => {
+    const s = st.current
+    if (s.blockClick) { e.stopPropagation(); e.preventDefault(); s.blockClick = false }
+  }
+
+  return (
+    <div className="swipe">
+      <div className={'swipe-bg ' + (dx > 0 ? 'right' : 'left')} aria-hidden="true"><Icon name="trash" size={20} /> Elimina</div>
+      <div className={'swipe-fg' + (anim ? ' anim' : '')} style={{ transform: `translateX(${dx}px)` }}
+           onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onClickCapture={clickCapture}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+// Messaggio breve in basso con un'azione facoltativa (per esempio "Annulla")
+export function useSnack() {
+  const [s, setS] = useState(null)
+  useEffect(() => {
+    if (!s) return undefined
+    const t = setTimeout(() => setS(null), 6000)
+    return () => clearTimeout(t)
+  }, [s])
+  const node = s ? (
+    <div className="snack" role="status">
+      <span>{s.msg}</span>
+      {s.action && <button type="button" onClick={() => { s.action(); setS(null) }}>{s.label}</button>}
+    </div>
+  ) : null
+  return [node, (msg, label, action) => setS({ msg, label, action })]
 }
