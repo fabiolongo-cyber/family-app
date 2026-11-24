@@ -3,6 +3,7 @@
   --ink: #1A1D21;
   --muted: #5C6470;
   --accent: #0F766E;
+  --line: #CFCCC2;
 }
 
 * { box-sizing: border-box; }
@@ -40,3 +41,48 @@ body {
 h1 { margin: 8px 0 0; font-size: 34px; letter-spacing: -0.02em; }
 .lead { margin: 0; font-size: 17px; line-height: 1.45; }
 .meta { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+
+.form { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font-size: 14px; font-weight: 600; }
+.field input {
+  height: 52px;
+  padding: 0 16px;
+  font-size: 16px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.btn {
+  min-height: 52px;
+  padding: 0 20px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.btn-primary { color: #fff; background: var(--accent); border: 0; }
+.btn-primary:disabled { opacity: 0.6; cursor: default; }
+.btn-quiet { color: var(--accent); background: transparent; border: 0; }
+
+input:focus-visible, .btn:focus-visible {
+  outline: 3px solid #0F766E;
+  outline-offset: 2px;
+}
+
+.error { margin: 0; font-size: 14px; color: #B42318; }
+.info { margin: 0; font-size: 14px; color: var(--accent); }
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+.card.ok { background: #DCF3E3; color: #14532D; }
+.card.warn { background: #FDF0DC; color: #7A3E0B; }
